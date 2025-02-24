@@ -1,2 +1,1 @@
-# fantastic-octo-potato
-nn for sagan
+# nn_for_sagan
