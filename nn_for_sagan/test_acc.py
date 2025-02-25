@@ -17,8 +17,8 @@ def calculate_accuracy(model, dataloader):
     return accuracy
 
 if __name__ == '__main__':
-    outputs = torch.tensor([[1, 2, 3, 4]])
-    targets = torch.tensor([[1.04, 2.03, 3.03, 4.03]])
+    outputs = torch.tensor([[1.04, 2.03, 3.03, 4.03], [2, 4, 6, 8]])
+    targets = torch.tensor([[1., 2., 3., 4.], [2, 4, 6, 8]])
     relative_error = torch.abs(outputs - targets) / torch.abs(targets)
     # 判断所有参数的相对误差是否小于 3%
     correct = torch.all(relative_error < 0.03, dim=1).sum().item()
