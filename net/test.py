@@ -81,16 +81,19 @@ class Loss1(nn.Module):
         self.arg_dict_func = arg_dict_func
         self.arg_dict_range = arg_dict_range
         self.w = []
+        self.b = []
         for key1, line in arg_dict_func.items():
             for key2, value in line.items():
                 if value == uniform:
-                    self.w.append(arg_dict_range[key1][key2][1] - arg_dict_range[key1][key2][0])
+                    self.w.append((arg_dict_range[key1][key2][1] - arg_dict_range[key1][key2][0]) / 2)
+                    self.b.append((arg_dict_range[key1][key2][1] + arg_dict_range[key1][key2][0]) / 2)
                 elif value == pnormal or value == normal:
                     self.w.append(3 * arg_dict_range[key1][key2][1])
+                    self.b.append(arg_dict_range[key1][key2][0])
         self.w = torch.tensor(self.w, dtype=torch.float32).to(device)
 
     def normalize(self, x):
-        return x / self.w
+        return (x - self.b) / self.w
 
     def forward(self, outputs, targets):
         targets_norm = self.normalize(targets)
@@ -210,7 +213,7 @@ def calculate_accuracy(model, dataloader):
         for inputs, targets in dataloader:
             outputs = model(inputs)
             # 计算相对误差
-            relative_error = torch.abs(outputs * loss.w - targets) / torch.abs(targets)
+            relative_error = torch.abs(outputs * loss.w + loss.b - targets) / torch.abs(targets)
             correct = torch.all(relative_error < 0.1, dim=1).sum().item()
             total_correct += correct
             total_samples += inputs.size(0)
@@ -254,8 +257,8 @@ if __name__ == '__main__':
     batch_size = 32
     num_epochs = 200
     learning_rate = 0.001
-    X = torch.load("./data/X.pt")
-    y = torch.load("./data/y.pt")
+    X = torch.load("E:/python/pythonProject/nn_for_sagan1/data/X.pt")
+    y = torch.load("E:/python/pythonProject/nn_for_sagan1/data/y.pt")
     print("数据已成功加载。")
 
     dataset = TensorDataset(X, y)
@@ -266,10 +269,10 @@ if __name__ == '__main__':
 
     # 初始化模型、损失函数和优化器
     model = Net1()
-    criterion = Loss1(arg_dict_func, arg_dict_range)  # 均方误差损失函数
+    criterion = Loss1(arg_dict_func, arg_dict_range)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     model_name = 'net1'
-    model.load_state_dict(torch.load(f"./model/{model_name}.pth"))
+    model.load_state_dict(torch.load(f"E:/python/pythonProject/nn_for_sagan1/model/{model_name}.pth"))
     model.eval()
     test_accuracy = calculate_accuracy(model, test_loader)
     index = 0
