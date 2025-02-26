@@ -54,13 +54,13 @@ arg_dict_range = {
 class Net1(nn.Module):
     def __init__(self, input_dim=1000, output_dim=27):
         super(Net1, self).__init__()
-        self.fc1 = nn.Linear(input_dim, 1024)
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.fc2 = nn.Linear(1024, 256)
+        self.fc1 = nn.Linear(input_dim, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.fc2 = nn.Linear(512, 256)
         self.bn2 = nn.BatchNorm1d(256)
-        self.fc3 = nn.Linear(256, 64)
-        self.bn3 = nn.BatchNorm1d(64)
-        self.fc4 = nn.Linear(64, output_dim)
+        self.fc3 = nn.Linear(256, 128)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.fc4 = nn.Linear(128, output_dim)
         init.xavier_normal_(self.fc1.weight)
         init.xavier_normal_(self.fc2.weight)
         init.xavier_normal_(self.fc3.weight)
@@ -91,6 +91,7 @@ class Loss1(nn.Module):
                     self.w.append(3 * arg_dict_range[key1][key2][1])
                     self.b.append(arg_dict_range[key1][key2][0])
         self.w = torch.tensor(self.w, dtype=torch.float32).to(device)
+        self.b = torch.tensor(self.b, dtype=torch.float32).to(device)
 
     def normalize(self, x):
         return (x - self.b) / self.w
@@ -220,6 +221,22 @@ def calculate_accuracy(model, dataloader):
     accuracy = total_correct / total_samples
     return accuracy
 
+def find_dead_neuron(model):
+    batch_size = 32
+    threshold = 1e-5
+    h1 = F.relu(model.fc1(torch.randn(batch_size, 1000)))
+    h2 = F.relu(model.fc2(torch.randn(batch_size, 512)))
+    h3 = F.relu(model.fc3(torch.randn(batch_size, 256)))
+    dead_neurons1 = (h1.abs() < threshold).all(dim=0)
+    dead_neuron1_indices = torch.nonzero(dead_neurons1).squeeze()
+    dead_neurons2 = (h2.abs() < threshold).all(dim=0)
+    dead_neurons2_indices = torch.nonzero(dead_neurons2).squeeze()
+    dead_neurons3 = (h3.abs() < threshold).all(dim=0)
+    dead_neurons3_indices = torch.nonzero(dead_neurons3).squeeze()
+    print("Dead neurons in the 1st hidden layer:", dead_neuron1_indices.tolist())
+    print("Dead neurons in the 2nd hidden layer:", dead_neurons2_indices.tolist())
+    print("Dead neurons in the 3rd hidden layer:", dead_neurons3_indices.tolist())
+
 def train_model(model, train_loader, test_loader, criterion, optimizer, num_epochs=10):
     train_losses = []
     train_accuracies = []
@@ -251,33 +268,58 @@ def train_model(model, train_loader, test_loader, criterion, optimizer, num_epoc
                 f"Epoch [{epoch + 1}/{num_epochs}], Loss: {avg_loss:.4f}, Train Accuracy: {train_accuracy:.4f}, Test Accuracy: {test_accuracy:.4f}")
     return train_losses, train_accuracies, test_accuracies
 
+def param_accuracy(model, dataloader):
+    model.eval()
+    total_correct = torch.zeros(27).to(device)  # 假设输出参数有27个
+    total_samples = 0
+    loss = Loss1(arg_dict_func, arg_dict_range)
+    with torch.no_grad():
+        for inputs, targets in dataloader:
+            outputs = model(inputs)
+            relative_error = torch.abs(outputs * loss.w + loss.b - targets) / torch.abs(targets)
+            # 统计每个输出参数中相对误差小于10%的比例
+            correct = (relative_error < 0.1).sum(dim=0)
+            total_correct += correct
+            total_samples += inputs.size(0)
+    accuracy_per_output = total_correct / total_samples
+    i = 0
+    for key1, line in arg_dict_func.items():
+        print(key1)
+        for key2, value in line.items():
+            if value == uniform:
+                print(f'{key2}:uniform{arg_dict_range[key1][key2]} {float(accuracy_per_output[i]):.4f}', end=", ")
+            elif value == normal:
+                print(f'{key2}:normal{arg_dict_range[key1][key2]} {float(accuracy_per_output[i]):.4f}', end=", ")
+            elif value == pnormal:
+                print(f'{key2}:pnormal{arg_dict_range[key1][key2]} {float(accuracy_per_output[i]):.4f}', end=", ")
+            i += 1
+        print('')
+
 if __name__ == '__main__':
     input_width = 1000
     num_samples = 50000
     batch_size = 32
     num_epochs = 200
     learning_rate = 0.001
-    X = torch.load("E:/python/pythonProject/nn_for_sagan1/data/X.pt")
-    y = torch.load("E:/python/pythonProject/nn_for_sagan1/data/y.pt")
+    X = torch.load("./data/X.pt")
+    y = torch.load("./data/y.pt")
     print("数据已成功加载。")
 
     dataset = TensorDataset(X, y)
-    train_size = int(0.8 * num_samples)
-    test_size = num_samples - train_size
-    train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     # 初始化模型、损失函数和优化器
     model = Net1()
     criterion = Loss1(arg_dict_func, arg_dict_range)
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     model_name = 'net1'
-    model.load_state_dict(torch.load(f"E:/python/pythonProject/nn_for_sagan1/model/{model_name}.pth"))
+    model.load_state_dict(torch.load(f"../model/{model_name}.pth"))
     model.eval()
     test_accuracy = calculate_accuracy(model, test_loader)
+    param_accuracy(model, test_loader)
     index = 0
     output = model(X[index])
+    find_dead_neuron(model)
     print(f"Test Accuracy: {test_accuracy:.4f}")
     print(y[index])
-    print(output * criterion.w)
+    print(output * criterion.w + criterion.b)
     print(criterion.forward(output, y[index]))
